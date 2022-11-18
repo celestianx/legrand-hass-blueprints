@@ -1,0 +1,108 @@
+blueprint:
+  name: Switch Legrand (067774)
+  description: Turn on/Dim a light when Legrand switch is pressed.
+  domain: automation
+  source_url: https://github.com/home-assistant/core/blob/dev/homeassistant/components/automation/blueprints/motion_light.yaml
+  input:
+    switch:
+      name: Switch
+      selector:
+        device:
+          manufacturer: "Legrand"
+          model: "Wireless double remote switch (067774)"
+    light_left:
+      name: Left Button
+      description: Entity to interact with when left button is pressed.
+      selector:
+        entity:
+          domain: light
+    light_right:
+      name: Right Button
+      description: Entity to interact with when right button is pressed.
+      selector:
+        entity:
+          domain: light
+    brightness_step:
+      name: Brightness Step
+      description: Increment/decrement step for light dimming.
+      default: 70
+      selector:
+        number:
+          min: 0
+          max: 255
+          unit_of_measurement: ""
+    transition_step:
+      name: Transition Step
+      description: Time duration for light to transition to transition to incremented/decremented brightness.
+      default:
+        hours: 0
+        minutes: 0
+        seconds: 1
+      selector:
+        duration:
+
+# If motion is detected within the delay,
+# we restart the script.
+mode: restart
+max_exceeded: silent
+
+variables:
+  switch: !input switch
+  switch_name: "{{ device_attr(switch, 'name') }}"
+  light_left: !input light_left
+  light_right: !input light_right
+  brightness_step: !input brightness_step
+  transition_step: !input transition_step
+
+trigger:
+  - platform: mqtt
+    topic: zigbee2mqtt/+/action
+condition:
+  - condition: template
+    value_template: "{{ switch_name == (trigger.topic | regex_findall_index('(?<=/).*(?=/)')) }}"
+action:
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: "{{ 'toggle_' in trigger.payload }}"
+        sequence:
+          - service: light.toggle
+            data: {}
+            target:
+              entity_id: >
+                {% if '_left' in trigger.payload %}
+                  {{ light_left }}
+                {% else %}
+                  {{ light_right }}
+                {% endif %}
+      - conditions:
+          - condition: template
+            value_template: "{{ 'brightness_move' in trigger.payload }}"
+        sequence:
+          - repeat:
+              until:
+                - condition: template
+                  value_template: "{{ 'brightness_stop' in trigger.payload }}"
+              sequence:
+                - service: light.turn_on
+                  data:
+                    transition: "{{ transition_step.seconds }}"
+                    brightness: >
+                      {% set light = light_left if '_left' in trigger.payload else light_right %}
+                      {% if '_move_up_' in trigger.payload %}
+                          {{ min(255, state_attr(light, 'brightness') + brightness_step) }}
+                      {% elif '_move_down_' in trigger.payload %}
+                        {{ max(1, state_attr(light, 'brightness') - brightness_step) }}
+                      {% endif %}
+                  target:
+                    entity_id: >
+                      {% if '_left' in trigger.payload %}
+                        {{ light_left }}
+                      {% else %}
+                        {{ light_right }}
+                      {% endif %}
+                - delay:
+                    hours: 0
+                    minutes: 0
+                    seconds: "{{ transition_step.seconds }}"
+                    milliseconds: 0
