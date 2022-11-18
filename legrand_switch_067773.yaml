@@ -2,7 +2,7 @@ blueprint:
   name: Switch Legrand (067773)
   description: Turn on/Dim a light when Legrand switch is pressed.
   domain: automation
-  source_url: https://github.com/home-assistant/core/blob/dev/homeassistant/components/automation/blueprints/motion_light.yaml
+  source_url: https://github.com/celestianx/legrand-hass-blueprints/blob/main/legrand_switch_067773.yaml
   input:
     switch:
       name: Switch
