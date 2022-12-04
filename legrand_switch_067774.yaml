@@ -1,6 +1,6 @@
 blueprint:
   name: Switch Legrand (067774)
-  description: Turn on/Dim a light when Legrand switch is pressed.
+  description: Bind Legrand switch to lights and switches supporting toggling and dimming when pressed.
   domain: automation
   source_url: https://github.com/celestianx/legrand-hass-blueprints/blob/main/legrand_switch_067774.yaml
   input:
@@ -9,22 +9,26 @@ blueprint:
       selector:
         device:
           manufacturer: "Legrand"
-          model: "Wireless double remote switch (067774)"
-    light_left:
+          model: "Wireless double remote switch (067774)" 
+    left_button:
       name: Left Button
-      description: Entity to interact with when left button is pressed.
       selector:
         entity:
-          domain: light
-    light_right:
+          multiple: true
+          domain: 
+            - light
+            - switch
+    right_button:
       name: Right Button
-      description: Entity to interact with when right button is pressed.
       selector:
         entity:
-          domain: light
+          multiple: true
+          domain: 
+            - light
+            - switch
     brightness_step:
       name: Brightness Step
-      description: Increment/decrement step for light dimming.
+      description: Number of brightness units applied when dimming up or down a light (only supported for lights).
       default: 70
       selector:
         number:
@@ -33,7 +37,7 @@ blueprint:
           unit_of_measurement: ""
     transition_step:
       name: Transition Step
-      description: Time duration for light to transition to transition to incremented/decremented brightness.
+      description: Time duration for lights to transition to incremented/decremented brightness.
       default:
         hours: 0
         minutes: 0
@@ -41,16 +45,14 @@ blueprint:
       selector:
         duration:
 
-# If motion is detected within the delay,
-# we restart the script.
 mode: restart
 max_exceeded: silent
 
 variables:
   switch: !input switch
   switch_name: "{{ device_attr(switch, 'name') }}"
-  light_left: !input light_left
-  light_right: !input light_right
+  left_button: !input left_button
+  right_button: !input right_button
   brightness_step: !input brightness_step
   transition_step: !input transition_step
 
@@ -61,46 +63,57 @@ condition:
   - condition: template
     value_template: "{{ switch_name == (trigger.topic | regex_findall_index('(?<=/).*(?=/)')) }}"
 action:
+  - variables:
+      lights: >-
+        {{ (('_left' in trigger.payload) | iif(left_button, right_button)) |
+        select('search', 'light.*') | list }}
+      switches: >-
+        {{ (('_left' in trigger.payload) | iif(left_button, right_button)) |
+        select('search', 'switch.*') | list }}
   - choose:
       - conditions:
           - condition: template
-            value_template: "{{ 'toggle_' in trigger.payload }}"
+            value_template: "{{ 'toggle' in trigger.payload }}"
         sequence:
-          - service: light.toggle
-            data: {}
-            target:
-              entity_id: >
-                {% if '_left' in trigger.payload %}
-                  {{ light_left }}
-                {% else %}
-                  {{ light_right }}
-                {% endif %}
+          - parallel:
+            - if:
+                - condition: template
+                  value_template: "{{ lights | length > 0 }}"
+              then:
+                - service: light.toggle
+                  data: {}
+                  target:
+                    entity_id: "{{ lights }}"
+            - if:
+                - condition: template
+                  value_template: "{{ switches | length > 0 }}"
+              then:
+                - service: switch.toggle
+                  data: {}
+                  target:
+                    entity_id: "{{ switches }}"
       - conditions:
           - condition: template
-            value_template: "{{ 'brightness_move' in trigger.payload }}"
+            value_template: "{{ ('brightness_move' in trigger.payload) and (lights|length > 0) }}"
         sequence:
           - repeat:
               until:
                 - condition: template
                   value_template: "{{ 'brightness_stop' in trigger.payload }}"
               sequence:
+                - variables:
+                    reference_light: "{{ lights | first }}"
                 - service: light.turn_on
                   data:
                     transition: "{{ transition_step.seconds }}"
                     brightness: >
-                      {% set light = light_left if '_left' in trigger.payload else light_right %}
-                      {% if '_move_up_' in trigger.payload %}
-                          {{ min(255, state_attr(light, 'brightness') + brightness_step) }}
-                      {% elif '_move_down_' in trigger.payload %}
-                        {{ max(1, state_attr(light, 'brightness') - brightness_step) }}
+                      {% if '_move_up' in trigger.payload %}
+                          {{ min(255, state_attr(reference_light, 'brightness') + brightness_step) }}
+                      {% elif '_move_down' in trigger.payload %}
+                        {{ max(1, state_attr(reference_light, 'brightness') - brightness_step) }}
                       {% endif %}
                   target:
-                    entity_id: >
-                      {% if '_left' in trigger.payload %}
-                        {{ light_left }}
-                      {% else %}
-                        {{ light_right }}
-                      {% endif %}
+                    entity_id: "{{ lights }}"
                 - delay:
                     hours: 0
                     minutes: 0
