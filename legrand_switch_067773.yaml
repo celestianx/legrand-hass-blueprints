@@ -8,10 +8,11 @@ blueprint:
       name: Switch
       selector:
         device:
+          multiple: true
           manufacturer: "Legrand"
           model: "Wireless remote switch (067773)"
     left_button:
-      name: Left Button
+      name: Button
       selector:
         entity:
           multiple: true
@@ -41,8 +42,13 @@ mode: restart
 max_exceeded: silent
 
 variables:
-  switch: !input switch
-  switch_name: "{{ device_attr(switch, 'name') }}"
+  switches: !input switch
+  switches_name: >-
+    {%  set tmp = namespace(entities=[]) %}
+    {%  for device_id in switches %}
+    {%  set tmp.entities = tmp.entities + [device_attr(device_id, "name")] %}
+    {% endfor %}
+    {{ tmp.entities }}
   left_button: !input left_button
   brightness_step: !input brightness_step
   transition_step: !input transition_step
@@ -52,7 +58,7 @@ trigger:
     topic: zigbee2mqtt/+/action
 condition:
   - condition: template
-    value_template: "{{ switch_name == (trigger.topic | regex_findall_index('(?<=/).*(?=/)')) }}"
+    value_template: "{{ (trigger.topic | regex_findall_index('(?<=/).*(?=/)')) in switches_name }}"
 action:
   - variables:
       lights: >-

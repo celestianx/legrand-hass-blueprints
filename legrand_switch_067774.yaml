@@ -4,10 +4,11 @@ blueprint:
   domain: automation
   source_url: https://github.com/celestianx/legrand-hass-blueprints/blob/main/legrand_switch_067774.yaml
   input:
-    switch:
-      name: Switch
+    switches:
+      name: Switches
       selector:
         device:
+          multiple: true
           manufacturer: "Legrand"
           model: "Wireless double remote switch (067774)" 
     left_button:
@@ -49,8 +50,13 @@ mode: restart
 max_exceeded: silent
 
 variables:
-  switch: !input switch
-  switch_name: "{{ device_attr(switch, 'name') }}"
+  switches: !input switches
+  switches_name: >-
+    {%  set tmp = namespace(entities=[]) %}
+    {%  for device_id in switches %}
+    {%  set tmp.entities = tmp.entities + [device_attr(device_id, "name")] %}
+    {% endfor %}
+    {{ tmp.entities }}
   left_button: !input left_button
   right_button: !input right_button
   brightness_step: !input brightness_step
@@ -61,7 +67,7 @@ trigger:
     topic: zigbee2mqtt/+/action
 condition:
   - condition: template
-    value_template: "{{ switch_name == (trigger.topic | regex_findall_index('(?<=/).*(?=/)')) }}"
+    value_template: "{{ (trigger.topic | regex_findall_index('(?<=/).*(?=/)')) in switches_name }}"
 action:
   - variables:
       lights: >-
@@ -70,6 +76,10 @@ action:
       switches: >-
         {{ (('_left' in trigger.payload) | iif(left_button, right_button)) |
         select('search', 'switch.*') | list }}
+  - service: notify.mobile_app_antoines_iphone
+    data:
+      title: test
+      message: "{{switches_name | join(', ')}}"
   - choose:
       - conditions:
           - condition: template
