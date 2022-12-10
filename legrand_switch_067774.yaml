@@ -76,10 +76,6 @@ action:
       switches: >-
         {{ (('_left' in trigger.payload) | iif(left_button, right_button)) |
         select('search', 'switch.*') | list }}
-  - service: notify.mobile_app_antoines_iphone
-    data:
-      title: test
-      message: "{{switches_name | join(', ')}}"
   - choose:
       - conditions:
           - condition: template
